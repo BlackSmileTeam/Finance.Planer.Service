@@ -35,7 +35,7 @@ public sealed class AuthController : ControllerBase
         try
         {
             var response = await _authService.RegisterAsync(request, cancellationToken);
-            return CreatedAtAction(nameof(RegisterAsync), response);
+            return StatusCode(StatusCodes.Status201Created, response);
         }
         catch (InvalidOperationException ex)
         {
