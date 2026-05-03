@@ -25,10 +25,18 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// JWT Authentication
-var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT key is not configured.");
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? throw new InvalidOperationException("JWT issuer is not configured.");
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? throw new InvalidOperationException("JWT audience is not configured.");
+// JWT — empty GitHub secret becomes "", not null; SymmetricSecurityKey then throws at runtime (IDX10703).
+static string RequireJwtValue(string? value, string configKey, string envName)
+{
+    if (string.IsNullOrWhiteSpace(value))
+        throw new InvalidOperationException(
+            $"{configKey} is missing or empty. For Docker/production set environment variable {envName} (e.g. GitHub Actions secret). Use a signing key of at least 32 characters for HS256.");
+    return value;
+}
+
+var jwtKey = RequireJwtValue(builder.Configuration["Jwt:Key"], "Jwt:Key", "Jwt__Key");
+var jwtIssuer = RequireJwtValue(builder.Configuration["Jwt:Issuer"], "Jwt:Issuer", "Jwt__Issuer");
+var jwtAudience = RequireJwtValue(builder.Configuration["Jwt:Audience"], "Jwt:Audience", "Jwt__Audience");
 
 builder.Services.AddAuthentication(options =>
 {
@@ -55,9 +63,19 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("frontend", policy =>
     {
-        policy.WithOrigins(
-                "http://localhost:5173",
-                "https://localhost:5173")
+        var origins = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "http://localhost:5173",
+            "https://localhost:5173"
+        };
+        var extra = builder.Configuration["Cors:AllowedOrigins"];
+        if (!string.IsNullOrWhiteSpace(extra))
+        {
+            foreach (var o in extra.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                origins.Add(o);
+        }
+
+        policy.WithOrigins(origins.ToArray())
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();

@@ -1,7 +1,7 @@
 # No Docker Hub: build image in CI, docker save, SCP, docker load on server.
 # Repository root = API solution (this repo).
 # Secrets: PROD_HOST, PROD_USER, PROD_SSH_PRIVATE_KEY, PROD_SSH_PORT,
-#         DB_CONNECTION_STRING, JWT_KEY, JWT_ISSUER, JWT_AUDIENCE
+#         DB_CONNECTION_STRING, JWT_KEY (min ~32 chars), JWT_ISSUER, JWT_AUDIENCE
 
 name: Deploy API
 
@@ -19,6 +19,8 @@ env:
   BUILD_CONTEXT: .
   CONTAINER_PORT: 80
   HOST_PORT: 55665
+  # Must match web deploy HOST_PORT (browser origin for CORS).
+  WEB_HOST_PORT: "55666"
   IMAGE_NAME: financial-planner-api
   CONTAINER_NAME: financial-planner-api
   DB_SECRET_FILE: db-connection.txt
@@ -205,6 +207,7 @@ jobs:
               -e Jwt__Key="$JWT_KEY" \
               -e Jwt__Issuer="$JWT_ISSUER" \
               -e Jwt__Audience="$JWT_AUDIENCE" \
+              -e Cors__AllowedOrigins="http://${{ secrets.PROD_HOST }}:${{ env.WEB_HOST_PORT }}" \
               ${{ env.IMAGE_NAME }}:latest
 
             sleep 3
