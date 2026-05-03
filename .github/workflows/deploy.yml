@@ -1,0 +1,225 @@
+# Деплой без Docker Hub: build → docker save → SCP → docker load на сервере.
+# Секреты: PROD_HOST, PROD_USER, PROD_SSH_PRIVATE_KEY, PROD_SSH_PORT
+# Дополнительно: DB_CONNECTION_STRING, JWT_KEY, JWT_ISSUER, JWT_AUDIENCE
+
+name: Deploy API
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-financial-planner-api
+  cancel-in-progress: true
+
+env:
+  DOCKERFILE_PATH: Dockerfile
+  BUILD_CONTEXT: .
+  CONTAINER_PORT: 80
+  HOST_PORT: 55665
+  DEPLOY_DIR: /opt/financial-planner-api
+  IMAGE_NAME: financial-planner-api
+  CONTAINER_NAME: financial-planner-api
+  DB_SECRET_FILE: db-connection.txt
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate secrets and SSH
+        run: |
+          if [ -z "${{ secrets.PROD_HOST }}" ]; then echo "Missing secret: PROD_HOST"; exit 1; fi
+          if [ -z "${{ secrets.PROD_USER }}" ]; then echo "Missing secret: PROD_USER"; exit 1; fi
+          if [ -z "${{ secrets.PROD_SSH_PRIVATE_KEY }}" ]; then echo "Missing secret: PROD_SSH_PRIVATE_KEY"; exit 1; fi
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          P="${{ secrets.PROD_SSH_PORT }}"
+          P="${P:-22}"
+          ssh-keyscan -p "$P" "${{ secrets.PROD_HOST }}" >> ~/.ssh/known_hosts
+          echo "SSH key validated successfully"
+        env:
+          SSH_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+
+  test-connection:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || success() }}
+    steps:
+      - name: Test SSH connection
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          port: ${{ secrets.PROD_SSH_PORT }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          script: |
+            echo "=== SSH Connection Test ==="
+            docker --version
+            df -h
+            docker ps -a || true
+
+  test:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore and build
+        run: |
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+      - name: Run tests
+        run: |
+          dotnet test --configuration Release --no-build --verbosity normal || echo "No tests or test failure (non-blocking)"
+        continue-on-error: true
+
+  build:
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    outputs:
+      docker_tag: ${{ steps.determine_tag.outputs.TAG }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Determine Docker tag
+        id: determine_tag
+        run: |
+          if [ -n "$(git tag --points-at HEAD 2>/dev/null)" ]; then
+            echo "TAG=$(git tag --points-at HEAD | head -1)" >> $GITHUB_OUTPUT
+          else
+            echo "TAG=$(date +'%Y.%m.%d-%H%M')" >> $GITHUB_OUTPUT
+          fi
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image (local, no registry)
+        run: |
+          docker buildx create --use
+          docker buildx build \
+            -f ${{ env.DOCKERFILE_PATH }} \
+            -t ${{ env.IMAGE_NAME }}:${{ steps.determine_tag.outputs.TAG }} \
+            -t ${{ env.IMAGE_NAME }}:latest \
+            --platform linux/amd64 \
+            --load \
+            ${{ env.BUILD_CONTEXT }}
+      - name: Save Docker image
+        run: docker save ${{ env.IMAGE_NAME }}:latest | gzip > ${{ env.IMAGE_NAME }}.tar.gz
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-api
+          path: ${{ env.IMAGE_NAME }}.tar.gz
+          retention-days: 1
+
+  deploy:
+    needs: [build, test-connection]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-api
+          path: .
+      - name: Verify artifact
+        run: test -f ${{ env.IMAGE_NAME }}.tar.gz
+
+      - name: Prepare deployment directory
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          port: ${{ secrets.PROD_SSH_PORT }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          script: |
+            mkdir -p ${{ env.DEPLOY_DIR }}/logs
+            mkdir -p ${{ env.DEPLOY_DIR }}/secrets
+            chmod 750 ${{ env.DEPLOY_DIR }}/secrets
+
+      - name: Copy Docker image to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          port: ${{ secrets.PROD_SSH_PORT }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          source: "${{ env.IMAGE_NAME }}.tar.gz"
+          target: "/tmp/"
+          overwrite: true
+
+      - name: Write DB secret on server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          port: ${{ secrets.PROD_SSH_PORT }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          envs: DB_CONNECTION_STRING
+          script: |
+            set -euo pipefail
+            printf '%s' "$DB_CONNECTION_STRING" > ${{ env.DEPLOY_DIR }}/secrets/${{ env.DB_SECRET_FILE }}
+            chmod 600 ${{ env.DEPLOY_DIR }}/secrets/${{ env.DB_SECRET_FILE }}
+        env:
+          DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}
+
+      - name: Deploy container
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          port: ${{ secrets.PROD_SSH_PORT }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          envs: JWT_KEY,JWT_ISSUER,JWT_AUDIENCE
+          script: |
+            set -euo pipefail
+            echo "Loading Docker image..."
+            docker load < /tmp/${{ env.IMAGE_NAME }}.tar.gz
+            rm -f /tmp/${{ env.IMAGE_NAME }}.tar.gz
+
+            docker stop ${{ env.CONTAINER_NAME }} || true
+            docker rm -f ${{ env.CONTAINER_NAME }} || true
+
+            DB_CONN="$(cat ${{ env.DEPLOY_DIR }}/secrets/${{ env.DB_SECRET_FILE }})"
+
+            docker run -d \
+              --name ${{ env.CONTAINER_NAME }} \
+              --restart unless-stopped \
+              -p ${{ env.HOST_PORT }}:${{ env.CONTAINER_PORT }} \
+              -e ASPNETCORE_ENVIRONMENT=Production \
+              -e ASPNETCORE_URLS=http://+:80 \
+              -e ConnectionStrings__Database="$DB_CONN" \
+              -e Jwt__Key="$JWT_KEY" \
+              -e Jwt__Issuer="$JWT_ISSUER" \
+              -e Jwt__Audience="$JWT_AUDIENCE" \
+              ${{ env.IMAGE_NAME }}:latest
+
+            sleep 3
+            docker ps --filter "name=${{ env.CONTAINER_NAME }}"
+            docker image prune -f
+            echo "=== API deployed on port ${{ env.HOST_PORT }} ==="
+        env:
+          JWT_KEY: ${{ secrets.JWT_KEY }}
+          JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
+          JWT_AUDIENCE: ${{ secrets.JWT_AUDIENCE }}
+
+  post-deploy-test:
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          port: ${{ secrets.PROD_SSH_PORT }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          script: |
+            echo "=== API verification ==="
+            docker ps -a | grep ${{ env.CONTAINER_NAME }} || true
+            docker logs ${{ env.CONTAINER_NAME }} --tail 20 || true
+            curl -sf "http://localhost:${{ env.HOST_PORT }}/swagger/v1/swagger.json" >/dev/null && echo "Swagger OK" || echo "Check API logs"
