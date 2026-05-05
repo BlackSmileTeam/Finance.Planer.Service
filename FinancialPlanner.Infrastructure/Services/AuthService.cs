@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -20,20 +21,34 @@ public sealed class AuthService : IAuthService
 {
     private readonly FinancialPlannerDbContext _context;
     private readonly IConfiguration _configuration;
+    private readonly AuditActorContext _auditActorContext;
 
     /// <summary>
     /// <para>Initializes a new instance of the auth service.</para>
     /// </summary>
-    public AuthService(FinancialPlannerDbContext context, IConfiguration configuration)
+    public AuthService(
+        FinancialPlannerDbContext context,
+        IConfiguration configuration,
+        AuditActorContext auditActorContext)
     {
         _context = context;
         _configuration = configuration;
+        _auditActorContext = auditActorContext;
     }
 
     /// <inheritdoc/>
     public async Task<LoginResponseDto> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
-        if (await _context.Users.AnyAsync(u => u.Username == request.Username || u.Email == request.Email, cancellationToken))
+        var username = request.Username.Trim();
+        var email = request.Email.Trim();
+        if (username.Length == 0 || email.Length == 0)
+            throw new InvalidOperationException("Username and email are required.");
+        if (!new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(email))
+            throw new InvalidOperationException("Invalid email address.");
+
+        if (await _context.Users.AnyAsync(
+                u => u.Username == username || u.Email.ToLower() == email.ToLower(),
+                cancellationToken))
         {
             throw new InvalidOperationException("Username or email already exists.");
         }
@@ -41,17 +56,27 @@ public sealed class AuthService : IAuthService
         var user = new User
         {
             Id = Guid.NewGuid(),
-            Username = request.Username,
-            Email = request.Email,
-            FullName = request.FullName,
+            Username = username,
+            Email = email,
+            FullName = string.IsNullOrWhiteSpace(request.FullName) ? null : request.FullName.Trim(),
             PasswordHash = HashPassword(request.Password),
             IsActive = true,
+            IsAdministrator = false,
+            LastLoginAt = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
         _context.Users.Add(user);
-        await _context.SaveChangesAsync(cancellationToken);
+        _auditActorContext.ActingUserId = user.Id;
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            _auditActorContext.ActingUserId = null;
+        }
 
         var token = GenerateJwtToken(user);
         var expiresAt = DateTime.UtcNow.AddDays(7);
@@ -60,13 +85,7 @@ public sealed class AuthService : IAuthService
         {
             Token = token,
             ExpiresAt = expiresAt,
-            User = new UserDto
-            {
-                Id = user.Id,
-                Username = user.Username,
-                Email = user.Email,
-                FullName = user.FullName
-            }
+            User = MapUserDto(user)
         };
     }
 
@@ -84,6 +103,18 @@ public sealed class AuthService : IAuthService
             throw new UnauthorizedAccessException("Invalid username or password.");
         }
 
+        user.LastLoginAt = DateTime.UtcNow;
+        user.UpdatedAt = DateTime.UtcNow;
+        _auditActorContext.ActingUserId = user.Id;
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            _auditActorContext.ActingUserId = null;
+        }
+
         var token = GenerateJwtToken(user);
         var expiresAt = DateTime.UtcNow.AddDays(7);
 
@@ -91,13 +122,7 @@ public sealed class AuthService : IAuthService
         {
             Token = token,
             ExpiresAt = expiresAt,
-            User = new UserDto
-            {
-                Id = user.Id,
-                Username = user.Username,
-                Email = user.Email,
-                FullName = user.FullName
-            }
+            User = MapUserDto(user)
         };
     }
 
@@ -131,17 +156,32 @@ public sealed class AuthService : IAuthService
         }
     }
 
+    private static UserDto MapUserDto(User user) =>
+        new()
+        {
+            Id = user.Id,
+            Username = user.Username,
+            Email = user.Email,
+            FullName = user.FullName,
+            IsAdministrator = user.IsAdministrator
+        };
+
     private string GenerateJwtToken(User user)
     {
         var key = Encoding.UTF8.GetBytes(_configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT key is not configured."));
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(ClaimTypes.Name, user.Username),
+            new(ClaimTypes.Email, user.Email)
+        };
+        if (user.IsAdministrator)
+            claims.Add(new Claim(ClaimTypes.Role, "Admin"));
+
         var tokenDescriptor = new SecurityTokenDescriptor
         {
-            Subject = new ClaimsIdentity(new[]
-            {
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Email, user.Email)
-            }),
+            Subject = new ClaimsIdentity(claims),
             Expires = DateTime.UtcNow.AddDays(7),
             Issuer = _configuration["Jwt:Issuer"],
             Audience = _configuration["Jwt:Audience"],
