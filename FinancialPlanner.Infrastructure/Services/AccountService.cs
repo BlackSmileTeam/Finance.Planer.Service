@@ -130,7 +130,33 @@ public sealed class AccountService : IAccountService
         };
 
         _context.Accounts.Add(entity);
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (MySqlException ex) when (ex.Message.Contains("card_holder_name", StringComparison.OrdinalIgnoreCase))
+        {
+            // Fallback for environments where runtime mapping still references removed card_holder_name.
+            await _context.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO accounts (
+                    id, user_id, name, account_number, account_type, balance, expiry_date, color, currency, is_active, created_at, updated_at
+                )
+                VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11})
+                """,
+                entity.Id,
+                entity.UserId,
+                entity.Name,
+                (object?)entity.AccountNumber ?? DBNull.Value,
+                entity.AccountType,
+                entity.Balance,
+                (object?)entity.ExpiryDate ?? DBNull.Value,
+                (object?)entity.Color ?? DBNull.Value,
+                (object?)entity.Currency ?? DBNull.Value,
+                entity.IsActive,
+                entity.CreatedAt,
+                entity.UpdatedAt);
+        }
 
         return new AccountDto
         {
@@ -181,7 +207,40 @@ public sealed class AccountService : IAccountService
         entity.IsActive = request.IsActive;
         entity.UpdatedAt = DateTime.UtcNow;
 
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (MySqlException ex) when (ex.Message.Contains("card_holder_name", StringComparison.OrdinalIgnoreCase))
+        {
+            // Fallback for environments where runtime mapping still references removed card_holder_name.
+            await _context.Database.ExecuteSqlRawAsync(
+                """
+                UPDATE accounts
+                SET
+                    name = {0},
+                    account_number = {1},
+                    account_type = {2},
+                    balance = {3},
+                    expiry_date = {4},
+                    color = {5},
+                    currency = {6},
+                    is_active = {7},
+                    updated_at = {8}
+                WHERE id = {9} AND user_id = {10}
+                """,
+                entity.Name,
+                (object?)entity.AccountNumber ?? DBNull.Value,
+                entity.AccountType,
+                entity.Balance,
+                (object?)entity.ExpiryDate ?? DBNull.Value,
+                (object?)entity.Color ?? DBNull.Value,
+                (object?)entity.Currency ?? DBNull.Value,
+                entity.IsActive,
+                entity.UpdatedAt,
+                entity.Id,
+                userId);
+        }
 
         return new AccountDto
         {
