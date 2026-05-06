@@ -26,11 +26,6 @@ public sealed class UpdateAccountRequest
     public decimal Balance { get; init; }
 
     /// <summary>
-    /// <para>Gets or sets the card holder name.</para>
-    /// </summary>
-    public string? CardHolderName { get; init; }
-
-    /// <summary>
     /// <para>Gets or sets the expiry date.</para>
     /// </summary>
     public string? ExpiryDate { get; init; }

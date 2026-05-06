@@ -20,6 +20,8 @@ public static class DependencyInjection
         var connectionString = configuration.GetConnectionString("Database")
             ?? throw new InvalidOperationException("Database connection string is not configured.");
 
+        services.AddHttpContextAccessor();
+        services.AddScoped<AuditActorContext>();
         services.AddDbContext<FinancialPlannerDbContext>(options =>
         {
             var serverVersion = ServerVersion.AutoDetect(connectionString);

@@ -24,5 +24,10 @@ public sealed class UserDto
     /// <para>Gets or sets the full name.</para>
     /// </summary>
     public string? FullName { get; set; }
+
+    /// <summary>
+    /// <para>Gets or sets a value indicating whether the user is an administrator.</para>
+    /// </summary>
+    public bool IsAdministrator { get; set; }
 }
 

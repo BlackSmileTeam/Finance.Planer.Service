@@ -20,9 +20,6 @@ public sealed class AccountDto
     /// <summary>Gets the current balance.</summary>
     public decimal Balance { get; init; }
 
-    /// <summary>Gets the card holder name.</summary>
-    public string? CardHolderName { get; init; }
-
     /// <summary>Gets the expiry date.</summary>
     public string? ExpiryDate { get; init; }
 

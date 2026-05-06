@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS accounts (
     account_number VARCHAR(50) NULL,
     account_type ENUM('Cash', 'Bank', 'Card', 'Savings') NOT NULL DEFAULT 'Card',
     balance DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-    card_holder_name VARCHAR(150) NULL,
     expiry_date VARCHAR(10) NULL,
     color VARCHAR(7) NULL DEFAULT '#3b82f6',
     is_active TINYINT(1) NOT NULL DEFAULT 1,

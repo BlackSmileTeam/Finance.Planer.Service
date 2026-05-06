@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(150) NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    is_administrator TINYINT(1) NOT NULL DEFAULT 0,
+    last_login_at DATETIME(6) NULL,
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (id),
@@ -22,6 +24,25 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE KEY ix_users_email (email),
     KEY ix_users_email_lookup (email),
     KEY ix_users_username_lookup (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- audit_log (change history for future rollback)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS audit_log (
+    id CHAR(36) NOT NULL,
+    user_id CHAR(36) NULL,
+    action VARCHAR(20) NOT NULL,
+    entity_type VARCHAR(120) NOT NULL,
+    entity_id_json LONGTEXT NULL,
+    state_before_json LONGTEXT NULL,
+    state_after_json LONGTEXT NULL,
+    created_at_utc DATETIME(6) NOT NULL,
+    PRIMARY KEY (id),
+    KEY ix_audit_log_user (user_id),
+    KEY ix_audit_log_created (created_at_utc),
+    KEY ix_audit_log_entity_created (entity_type, created_at_utc),
+    CONSTRAINT fk_audit_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
@@ -34,7 +55,6 @@ CREATE TABLE IF NOT EXISTS accounts (
     account_number VARCHAR(50) NULL,
     account_type VARCHAR(20) NOT NULL,
     balance DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-    card_holder_name VARCHAR(150) NULL,
     expiry_date VARCHAR(10) NULL,
     color VARCHAR(7) NULL,
     currency VARCHAR(10) NULL DEFAULT 'RUB',

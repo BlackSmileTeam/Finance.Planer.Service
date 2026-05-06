@@ -1,4 +1,5 @@
 using FinancialPlanner.Domain.Entities;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 
@@ -10,14 +11,22 @@ namespace FinancialPlanner.Infrastructure.Persistence;
 /// details for the financial planner backend.
 /// </para>
 /// </summary>
-public sealed class FinancialPlannerDbContext : DbContext
+public sealed partial class FinancialPlannerDbContext : DbContext
 {
+    private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly AuditActorContext? _auditActorContext;
+
     /// <summary>
     /// <para>Initializes a new instance of the context.</para>
     /// </summary>
-    public FinancialPlannerDbContext(DbContextOptions<FinancialPlannerDbContext> options)
+    public FinancialPlannerDbContext(
+        DbContextOptions<FinancialPlannerDbContext> options,
+        IHttpContextAccessor? httpContextAccessor = null,
+        AuditActorContext? auditActorContext = null)
         : base(options)
     {
+        _httpContextAccessor = httpContextAccessor;
+        _auditActorContext = auditActorContext;
     }
 
     /// <summary>
@@ -90,6 +99,11 @@ public sealed class FinancialPlannerDbContext : DbContext
     /// </summary>
     public DbSet<Account> Accounts => Set<Account>();
 
+    /// <summary>
+    /// <para>Gets the set of audit log entries.</para>
+    /// </summary>
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -133,6 +147,7 @@ public sealed class FinancialPlannerDbContext : DbContext
         ConfigureInvestments(modelBuilder);
         ConfigureIncomeRecords(modelBuilder);
         ConfigureAccounts(modelBuilder);
+        ConfigureAuditLogs(modelBuilder);
     }
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
@@ -157,6 +172,11 @@ public sealed class FinancialPlannerDbContext : DbContext
             entity.Property(e => e.IsActive)
                   .HasDefaultValue(true)
                   .HasColumnName("is_active");
+            entity.Property(e => e.IsAdministrator)
+                  .HasDefaultValue(false)
+                  .HasColumnName("is_administrator");
+            entity.Property(e => e.LastLoginAt)
+                  .HasColumnName("last_login_at");
             entity.Property(e => e.CreatedAt)
                   .HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt)
@@ -664,7 +684,6 @@ public sealed class FinancialPlannerDbContext : DbContext
             entity.Property(e => e.AccountNumber).HasMaxLength(50).HasColumnName("account_number");
             entity.Property(e => e.AccountType).HasMaxLength(20).IsRequired().HasColumnName("account_type");
             entity.Property(e => e.Balance).HasColumnType("decimal(12,2)");
-            entity.Property(e => e.CardHolderName).HasMaxLength(150).HasColumnName("card_holder_name");
             entity.Property(e => e.ExpiryDate).HasMaxLength(10).HasColumnName("expiry_date");
             entity.Property(e => e.Color).HasMaxLength(7).HasColumnName("color");
             entity.Property(e => e.Currency).HasMaxLength(10).HasColumnName("currency");
@@ -680,6 +699,23 @@ public sealed class FinancialPlannerDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(e => e.UserId).HasDatabaseName("ix_accounts_user");
             entity.HasIndex(e => new { e.UserId, e.IsActive }).HasDatabaseName("ix_accounts_user_active");
+        });
+    }
+
+    private static void ConfigureAuditLogs(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AuditLog>(entity =>
+        {
+            entity.Property(e => e.Action).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.EntityType).HasMaxLength(120).IsRequired();
+            entity.Property(e => e.EntityIdJson).HasColumnType("longtext");
+            entity.Property(e => e.StateBeforeJson).HasColumnType("longtext");
+            entity.Property(e => e.StateAfterJson).HasColumnType("longtext");
+            entity.Property(e => e.CreatedAtUtc).HasColumnName("created_at_utc");
+            entity.HasIndex(e => e.UserId).HasDatabaseName("ix_audit_log_user");
+            entity.HasIndex(e => e.CreatedAtUtc).HasDatabaseName("ix_audit_log_created");
+            entity.HasIndex(e => new { e.EntityType, e.CreatedAtUtc }).HasDatabaseName("ix_audit_log_entity_created");
+            entity.HasOne<User>().WithMany().HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

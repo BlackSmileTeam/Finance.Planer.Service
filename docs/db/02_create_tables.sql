@@ -10,10 +10,27 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(150) NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    is_administrator TINYINT(1) NOT NULL DEFAULT 0,
+    last_login_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX ix_users_email (email),
     INDEX ix_users_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id CHAR(36) NOT NULL PRIMARY KEY,
+    user_id CHAR(36) NULL,
+    action VARCHAR(20) NOT NULL,
+    entity_type VARCHAR(120) NOT NULL,
+    entity_id_json LONGTEXT NULL,
+    state_before_json LONGTEXT NULL,
+    state_after_json LONGTEXT NULL,
+    created_at_utc DATETIME NOT NULL,
+    INDEX ix_audit_log_user (user_id),
+    INDEX ix_audit_log_created (created_at_utc),
+    INDEX ix_audit_log_entity_created (entity_type, created_at_utc),
+    CONSTRAINT fk_audit_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS categories (

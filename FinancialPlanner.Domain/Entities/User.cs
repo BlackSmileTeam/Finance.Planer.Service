@@ -38,6 +38,16 @@ public sealed class User
     public bool IsActive { get; set; } = true;
 
     /// <summary>
+    /// <para>Gets or sets a value indicating whether the user is an administrator (e.g. manage global category catalog).</para>
+    /// </summary>
+    public bool IsAdministrator { get; set; }
+
+    /// <summary>
+    /// <para>Gets or sets the last successful login time (UTC).</para>
+    /// </summary>
+    public DateTime? LastLoginAt { get; set; }
+
+    /// <summary>
     /// <para>Gets or sets the creation timestamp in UTC.</para>
     /// </summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

@@ -38,11 +38,6 @@ public sealed class Account
     public decimal Balance { get; set; }
 
     /// <summary>
-    /// <para>Gets or sets the card holder name (for cards).</para>
-    /// </summary>
-    public string? CardHolderName { get; set; }
-
-    /// <summary>
     /// <para>Gets or sets the expiry date (for cards).</para>
     /// </summary>
     public string? ExpiryDate { get; set; }
