@@ -4,6 +4,7 @@ using FinancialPlanner.Application.Requests;
 using FinancialPlanner.Domain.Entities;
 using FinancialPlanner.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using MySqlConnector;
 
 namespace FinancialPlanner.Infrastructure.Services;
 
@@ -25,25 +26,51 @@ public sealed class AccountService : IAccountService
     /// <inheritdoc/>
     public async Task<IEnumerable<AccountDto>> GetAllAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        return await _context.Accounts
-            .AsNoTracking()
-            .Where(a => a.UserId == userId)
-            .OrderBy(a => a.Name)
-            .Select(a => new AccountDto
-            {
-                Id = a.Id,
-                Name = a.Name,
-                AccountNumber = a.AccountNumber,
-                AccountType = a.AccountType,
-                Balance = a.Balance,
-                CardHolderName = a.CardHolderName,
-                ExpiryDate = a.ExpiryDate,
-                Color = a.Color,
-                Currency = a.Currency,
-                IsActive = a.IsActive,
-                CreatedAt = a.CreatedAt
-            })
-            .ToListAsync(cancellationToken);
+        try
+        {
+            return await _context.Accounts
+                .AsNoTracking()
+                .Where(a => a.UserId == userId)
+                .OrderBy(a => a.Name)
+                .Select(a => new AccountDto
+                {
+                    Id = a.Id,
+                    Name = a.Name,
+                    AccountNumber = a.AccountNumber,
+                    AccountType = a.AccountType,
+                    Balance = a.Balance,
+                    ExpiryDate = a.ExpiryDate,
+                    Color = a.Color,
+                    Currency = a.Currency,
+                    IsActive = a.IsActive,
+                    CreatedAt = a.CreatedAt
+                })
+                .ToListAsync(cancellationToken);
+        }
+        catch (MySqlException ex) when (ex.Message.Contains("card_holder_name", StringComparison.OrdinalIgnoreCase))
+        {
+            // Backward-compatible fallback: if runtime model still expects dropped column,
+            // query accounts via raw SQL with the actual schema.
+            return await _context.Database.SqlQueryRaw<AccountDto>(
+                """
+                SELECT
+                    id AS Id,
+                    name AS Name,
+                    account_number AS AccountNumber,
+                    account_type AS AccountType,
+                    balance AS Balance,
+                    expiry_date AS ExpiryDate,
+                    color AS Color,
+                    currency AS Currency,
+                    is_active AS IsActive,
+                    created_at AS CreatedAt
+                FROM accounts
+                WHERE user_id = {0}
+                ORDER BY name
+                """,
+                userId)
+                .ToListAsync(cancellationToken);
+        }
     }
 
     /// <inheritdoc/>
@@ -59,7 +86,6 @@ public sealed class AccountService : IAccountService
                 AccountNumber = a.AccountNumber,
                 AccountType = a.AccountType,
                 Balance = a.Balance,
-                CardHolderName = a.CardHolderName,
                 ExpiryDate = a.ExpiryDate,
                 Color = a.Color,
                 Currency = a.Currency,
@@ -95,7 +121,6 @@ public sealed class AccountService : IAccountService
             AccountNumber = request.AccountNumber,
             AccountType = request.AccountType,
             Balance = request.Balance,
-            CardHolderName = request.CardHolderName,
             ExpiryDate = request.ExpiryDate,
             Color = request.Color,
             Currency = request.Currency,
@@ -114,7 +139,6 @@ public sealed class AccountService : IAccountService
             AccountNumber = entity.AccountNumber,
             AccountType = entity.AccountType,
             Balance = entity.Balance,
-            CardHolderName = entity.CardHolderName,
             ExpiryDate = entity.ExpiryDate,
             Color = entity.Color,
             Currency = entity.Currency,
@@ -151,7 +175,6 @@ public sealed class AccountService : IAccountService
         entity.AccountNumber = request.AccountNumber;
         entity.AccountType = request.AccountType;
         entity.Balance = request.Balance;
-        entity.CardHolderName = request.CardHolderName;
         entity.ExpiryDate = request.ExpiryDate;
         entity.Color = request.Color;
         entity.Currency = request.Currency;
@@ -167,7 +190,6 @@ public sealed class AccountService : IAccountService
             AccountNumber = entity.AccountNumber,
             AccountType = entity.AccountType,
             Balance = entity.Balance,
-            CardHolderName = entity.CardHolderName,
             ExpiryDate = entity.ExpiryDate,
             Color = entity.Color,
             Currency = entity.Currency,
