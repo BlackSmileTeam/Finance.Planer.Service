@@ -11,6 +11,7 @@ using FinancialPlanner.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
+using MySqlConnector;
 
 namespace FinancialPlanner.Infrastructure.Services;
 
@@ -71,7 +72,7 @@ public sealed class AuthService : IAuthService
         _auditActorContext.ActingUserId = user.Id;
         try
         {
-            await _context.SaveChangesAsync(cancellationToken);
+            await SaveChangesWithAuditFallbackAsync(cancellationToken);
         }
         finally
         {
@@ -108,7 +109,7 @@ public sealed class AuthService : IAuthService
         _auditActorContext.ActingUserId = user.Id;
         try
         {
-            await _context.SaveChangesAsync(cancellationToken);
+            await SaveChangesWithAuditFallbackAsync(cancellationToken);
         }
         finally
         {
@@ -204,6 +205,28 @@ public sealed class AuthService : IAuthService
     {
         var hashOfInput = HashPassword(password);
         return hashOfInput == passwordHash;
+    }
+
+    private async Task SaveChangesWithAuditFallbackAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsAuditLogTableMissing(ex))
+        {
+            foreach (var entry in _context.ChangeTracker.Entries<AuditLog>().Where(e => e.State == EntityState.Added).ToList())
+                entry.State = EntityState.Detached;
+
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private static bool IsAuditLogTableMissing(DbUpdateException exception)
+    {
+        return exception.InnerException is MySqlException mySqlException &&
+               mySqlException.Number == 1146 &&
+               mySqlException.Message.Contains("audit_logs", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc/>

@@ -7,6 +7,13 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff ";
+    options.UseUtcTimestamp = false;
+    options.IncludeScopes = false;
+});
+
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
