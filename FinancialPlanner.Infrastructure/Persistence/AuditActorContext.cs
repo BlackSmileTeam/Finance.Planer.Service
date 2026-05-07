@@ -7,4 +7,7 @@ public sealed class AuditActorContext
 {
     /// <summary>When set, audit entries use this user id instead of JWT claims.</summary>
     public Guid? ActingUserId { get; set; }
+
+    /// <summary>Temporarily disables audit appending for the current scope.</summary>
+    public bool SuppressAudit { get; set; }
 }

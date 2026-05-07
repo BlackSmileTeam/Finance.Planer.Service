@@ -4,6 +4,9 @@ public sealed partial class FinancialPlannerDbContext
 {
     private void AppendAuditLogs()
     {
+        if (_auditActorContext?.SuppressAudit == true)
+            return;
+
         var userId = ChangeTrackerAuditExtensions.TryGetCurrentUserId(_httpContextAccessor, _auditActorContext);
         foreach (var log in ChangeTrackerAuditExtensions.BuildAuditLogs(ChangeTracker, userId))
             AuditLogs.Add(log);

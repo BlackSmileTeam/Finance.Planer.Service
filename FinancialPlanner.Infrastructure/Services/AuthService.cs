@@ -218,7 +218,15 @@ public sealed class AuthService : IAuthService
             foreach (var entry in _context.ChangeTracker.Entries<AuditLog>().Where(e => e.State == EntityState.Added).ToList())
                 entry.State = EntityState.Detached;
 
-            await _context.SaveChangesAsync(cancellationToken);
+            _auditActorContext.SuppressAudit = true;
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            finally
+            {
+                _auditActorContext.SuppressAudit = false;
+            }
         }
     }
 
