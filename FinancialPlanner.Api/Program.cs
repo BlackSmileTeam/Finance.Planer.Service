@@ -3,6 +3,7 @@ using FinancialPlanner.Api.Json;
 using FinancialPlanner.Api.Middleware;
 using FinancialPlanner.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Logging.Console;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,7 @@ builder.Logging.AddSimpleConsole(options =>
     options.UseUtcTimestamp = false;
     options.SingleLine = true;
     options.IncludeScopes = false;
+    options.ColorBehavior = LoggerColorBehavior.Enabled;
 });
 
 builder.Services.AddInfrastructure(builder.Configuration);
