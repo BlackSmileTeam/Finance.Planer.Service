@@ -319,10 +319,11 @@ public sealed class MonthlySummaryService : IMonthlySummaryService
             var monthStart = new DateOnly(year, month, 1);
             var monthEnd = monthStart.AddMonths(1).AddDays(-1);
 
-            // Факт расхода: обычные расходы + фактические платежи по расписанию (вычисленные ежемесячные суммы из транзакций).
+            // Fact expense: debit expenses + installments linked to credit schedule + standalone loan-account payments (debit/expense logged against Loan account).
             var actualExpenseBase = actualExpenseLookup.GetValueOrDefault(key, 0m);
             var actualCreditForMonth = actualCreditPaymentByMonth.GetValueOrDefault(key, 0m);
-            var actualExpense = actualExpenseBase + actualCreditForMonth;
+            var actualLoanForMonth = actualLoanPaymentByMonth.GetValueOrDefault(key, 0m);
+            var actualExpense = actualExpenseBase + actualCreditForMonth + actualLoanForMonth;
             var actualIncome = actualIncomeLookup.GetValueOrDefault(key, 0m);
 
             // Check if snapshot exists (for historical data)
@@ -335,16 +336,16 @@ public sealed class MonthlySummaryService : IMonthlySummaryService
             // Плановый доход за месяц (уже без реализованных слотов)
             var plannedIncome = plannedIncomeLookup.GetValueOrDefault(key, 0m);
 
-            // Плановый расход: разовые плановые + повторяющиеся + только вычисленные суммы из транзакций (CreditPaymentSchedule при создании расхода/транзакции).
-            // В план/факт учитываем только то, что создаётся при расходах/транзакциях и вычисляется как ежемесячный платёж по расписанию.
-            // При фильтрации по дням (полумесяцы) кредитные платежи не имеют дня в расписании и дублируются в 8–23 и 24–7 — по полумесяцам не включаем.
+            // Planned expense: one-off planned + planned recurring + credit schedule (full month) + loan installments from account settings.
+            // Remaining credit/loan = planned amount minus booked payments so plan vs actual does not double-count realized installments.
+            // Half-month views: CreditPaymentSchedule has no calendar day → credit planned totals excluded; Loan uses payment calendar day → split by period.
             var plannedExpenseFromFuture = plannedExpenseLookup.GetValueOrDefault(key, 0m);
             var plannedRecurringForMonth = recurringByMonth.GetValueOrDefault(key, 0m);
             var creditPlanned = useDayFilter ? 0m : creditPaymentsByMonth.GetValueOrDefault(key, 0m);
-            var loanPlanned = 0m; // В план/факт только вычисленные по транзакциям суммы, займы из настроек счёта не включаем
-            var actualLoanForMonth = 0m;
+            // Planned loan installments from Loan account settings (same source as Available funds / dashboard credit lines).
+            var loanPlanned = loanPaymentsByMonth.GetValueOrDefault(key, 0m);
             var remainingCreditPlanned = Math.Max(0m, creditPlanned - actualCreditForMonth);
-            var remainingLoanPlanned = 0m;
+            var remainingLoanPlanned = Math.Max(0m, loanPlanned - actualLoanForMonth);
             var plannedExpensePending = plannedExpenseFromFuture + plannedRecurringForMonth + remainingCreditPlanned + remainingLoanPlanned;
             var fullPlannedExpenseForDisplay = plannedExpenseFromFuture + plannedRecurringForMonth + creditPlanned + loanPlanned;
 
