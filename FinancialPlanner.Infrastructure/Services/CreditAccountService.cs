@@ -81,7 +81,7 @@ public sealed class CreditAccountService : ICreditAccountService
             request.TermMonths.HasValue &&
             request.TermMonths.Value > 0)
         {
-            monthlyPayment = decimal.Round(currentBalance / request.TermMonths.Value, 2, MidpointRounding.AwayFromZero);
+            monthlyPayment = CalculateMonthlyPayment(currentBalance, request.TermMonths.Value, request.InterestRate);
         }
 
         var entity = new CreditAccount
@@ -140,7 +140,7 @@ public sealed class CreditAccountService : ICreditAccountService
             request.TermMonths.HasValue &&
             request.TermMonths.Value > 0)
         {
-            monthlyPayment = decimal.Round(request.CurrentBalance / request.TermMonths.Value, 2, MidpointRounding.AwayFromZero);
+            monthlyPayment = CalculateMonthlyPayment(request.CurrentBalance, request.TermMonths.Value, request.InterestRate);
         }
         entity.MonthlyPayment = monthlyPayment;
         entity.TotalAmount = request.TotalAmount;
@@ -290,6 +290,21 @@ public sealed class CreditAccountService : ICreditAccountService
         };
         _context.Expenses.Add(expense);
         await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    private static decimal CalculateMonthlyPayment(decimal principal, int termMonths, decimal? annualInterestRate)
+    {
+        if (principal <= 0 || termMonths <= 0)
+            return 0m;
+
+        var monthlyRate = (double)(annualInterestRate.GetValueOrDefault() / 100m / 12m);
+        if (monthlyRate <= 0d)
+            return decimal.Round(principal / termMonths, 2, MidpointRounding.AwayFromZero);
+
+        var principalDouble = (double)principal;
+        var factor = Math.Pow(1d + monthlyRate, termMonths);
+        var payment = principalDouble * monthlyRate * factor / (factor - 1d);
+        return decimal.Round((decimal)payment, 2, MidpointRounding.AwayFromZero);
     }
 }
 
