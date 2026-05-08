@@ -21,6 +21,7 @@ env:
   HOST_PORT: 55665
   # Must match web deploy HOST_PORT (browser origin for CORS).
   WEB_HOST_PORT: "55666"
+  WEB_HOSTNAME: "bebochka.ru"
   IMAGE_NAME: financial-planner-api
   CONTAINER_NAME: financial-planner-api
   DB_SECRET_FILE: db-connection.txt
@@ -207,7 +208,8 @@ jobs:
               -e Jwt__Key="$JWT_KEY" \
               -e Jwt__Issuer="$JWT_ISSUER" \
               -e Jwt__Audience="$JWT_AUDIENCE" \
-              -e Cors__AllowedOrigins="http://${{ secrets.PROD_HOST }}:${{ env.WEB_HOST_PORT }}" \
+              -e Cors__AllowedOrigins="http://${{ env.WEB_HOSTNAME }}:${{ env.WEB_HOST_PORT }},https://${{ env.WEB_HOSTNAME }}:${{ env.WEB_HOST_PORT }},http://${{ secrets.PROD_HOST }}:${{ env.WEB_HOST_PORT }}" \
+              -e HttpsRedirection__Enabled=false \
               ${{ env.IMAGE_NAME }}:latest
 
             sleep 3
