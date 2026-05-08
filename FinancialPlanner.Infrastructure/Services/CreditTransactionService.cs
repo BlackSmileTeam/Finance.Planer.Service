@@ -392,7 +392,7 @@ public sealed class CreditTransactionService : ICreditTransactionService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task ConfirmPaymentAsync(Guid paymentScheduleId, Guid userId, CancellationToken cancellationToken)
+    public async Task ConfirmPaymentAsync(Guid paymentScheduleId, Guid userId, decimal? amount, CancellationToken cancellationToken)
     {
         var payment = await _context.CreditPaymentSchedules
             .Include(p => p.CreditTransaction)
@@ -428,6 +428,8 @@ public sealed class CreditTransactionService : ICreditTransactionService
             ? "Платеж по кредиту"
             : "Платеж по кредитной карте";
 
+        var actualAmount = amount.HasValue && amount.Value > 0 ? amount.Value : payment.PaymentAmount;
+
         // Create expense for the payment (связь с графиком — при удалении транзакции удалим и эти расходы)
         var expense = new Expense
         {
@@ -436,7 +438,7 @@ public sealed class CreditTransactionService : ICreditTransactionService
             CategoryId = payment.CreditTransaction!.CategoryId,
             SubcategoryId = payment.CreditTransaction!.SubcategoryId,
             ExpenseDate = expenseDate,
-            Amount = payment.PaymentAmount,
+            Amount = actualAmount,
             Description = $"{paymentLabel} {account.Name}",
             AccountId = null, // Credit payment doesn't affect regular account balance
             CreditPaymentScheduleId = payment.Id

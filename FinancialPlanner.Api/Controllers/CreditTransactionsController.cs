@@ -96,7 +96,7 @@ public sealed class CreditTransactionsController : ControllerBase
     [HttpPost("confirm-payment/{paymentScheduleId:guid}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> ConfirmPaymentAsync(Guid paymentScheduleId, CancellationToken cancellationToken)
+    public async Task<IActionResult> ConfirmPaymentAsync(Guid paymentScheduleId, [FromQuery] decimal? amount, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
         if (userId == null)
@@ -104,7 +104,7 @@ public sealed class CreditTransactionsController : ControllerBase
 
         try
         {
-            await _service.ConfirmPaymentAsync(paymentScheduleId, userId.Value, cancellationToken);
+            await _service.ConfirmPaymentAsync(paymentScheduleId, userId.Value, amount, cancellationToken);
             return Ok();
         }
         catch (KeyNotFoundException)

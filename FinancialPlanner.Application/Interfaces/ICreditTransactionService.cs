@@ -15,6 +15,6 @@ public interface ICreditTransactionService
     Task RecordAsIncomeAsync(Guid id, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<PendingCreditPaymentDto>> GetPendingPaymentsAsync(Guid userId, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<PendingCreditPaymentDto>> GetCreditPaymentsForMonthAsync(int year, int month, Guid userId, CancellationToken cancellationToken);
-    Task ConfirmPaymentAsync(Guid paymentScheduleId, Guid userId, CancellationToken cancellationToken);
+    Task ConfirmPaymentAsync(Guid paymentScheduleId, Guid userId, decimal? amount, CancellationToken cancellationToken);
 }
 
