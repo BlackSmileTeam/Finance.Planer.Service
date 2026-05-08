@@ -74,6 +74,16 @@ public sealed class CreditAccountService : ICreditAccountService
             accountType = CreditAccountType.CreditCard;
         }
 
+        var currentBalance = request.CurrentBalance ?? 0m;
+        var monthlyPayment = request.MonthlyPayment;
+        if (accountType == CreditAccountType.CreditCard &&
+            currentBalance > 0 &&
+            request.TermMonths.HasValue &&
+            request.TermMonths.Value > 0)
+        {
+            monthlyPayment = decimal.Round(currentBalance / request.TermMonths.Value, 2, MidpointRounding.AwayFromZero);
+        }
+
         var entity = new CreditAccount
         {
             Id = Guid.NewGuid(),
@@ -81,11 +91,11 @@ public sealed class CreditAccountService : ICreditAccountService
             Name = request.Name,
             AccountType = accountType,
             CreditLimit = request.CreditLimit,
-            MonthlyPayment = request.MonthlyPayment,
+            MonthlyPayment = monthlyPayment,
             TotalAmount = request.TotalAmount,
             TermMonths = request.TermMonths,
             PaymentStartDate = request.PaymentStartDate,
-            CurrentBalance = request.CurrentBalance ?? 0,
+            CurrentBalance = currentBalance,
             InterestRate = request.InterestRate,
             IsActive = true,
             Notes = request.Notes
@@ -124,7 +134,15 @@ public sealed class CreditAccountService : ICreditAccountService
 
         entity.Name = request.Name;
         entity.CreditLimit = request.CreditLimit;
-        entity.MonthlyPayment = request.MonthlyPayment;
+        var monthlyPayment = request.MonthlyPayment;
+        if (entity.AccountType == CreditAccountType.CreditCard &&
+            request.CurrentBalance > 0 &&
+            request.TermMonths.HasValue &&
+            request.TermMonths.Value > 0)
+        {
+            monthlyPayment = decimal.Round(request.CurrentBalance / request.TermMonths.Value, 2, MidpointRounding.AwayFromZero);
+        }
+        entity.MonthlyPayment = monthlyPayment;
         entity.TotalAmount = request.TotalAmount;
         entity.TermMonths = request.TermMonths;
         entity.PaymentStartDate = request.PaymentStartDate;
@@ -170,7 +188,7 @@ public sealed class CreditAccountService : ICreditAccountService
         var loanAccounts = await _context.CreditAccounts
             .AsNoTracking()
             .Where(a => a.UserId == userId &&
-                        a.AccountType == CreditAccountType.Loan &&
+                        (a.AccountType == CreditAccountType.Loan || a.AccountType == CreditAccountType.CreditCard) &&
                         a.IsActive &&
                         a.MonthlyPayment.HasValue &&
                         a.MonthlyPayment.Value > 0 &&
@@ -217,7 +235,9 @@ public sealed class CreditAccountService : ICreditAccountService
     public async Task ConfirmLoanPaymentAsync(Guid creditAccountId, int year, int month, int day, decimal? amount, Guid userId, CancellationToken cancellationToken)
     {
         var loan = await _context.CreditAccounts
-            .FirstOrDefaultAsync(a => a.Id == creditAccountId && a.UserId == userId && a.AccountType == CreditAccountType.Loan, cancellationToken);
+            .FirstOrDefaultAsync(a => a.Id == creditAccountId && a.UserId == userId &&
+                                      (a.AccountType == CreditAccountType.Loan || a.AccountType == CreditAccountType.CreditCard),
+                cancellationToken);
         if (loan is null)
             throw new KeyNotFoundException("Loan account was not found.");
 
@@ -258,7 +278,9 @@ public sealed class CreditAccountService : ICreditAccountService
             SubcategoryId = null,
             ExpenseDate = expenseDate,
             Amount = paymentAmount,
-            Description = $"Платеж по кредиту {loan.Name}",
+            Description = loan.AccountType == CreditAccountType.CreditCard
+                ? $"Платеж по кредитной карте {loan.Name}"
+                : $"Платеж по кредиту {loan.Name}",
             AccountId = null,
             IsPlanned = false,
             CreditPaymentScheduleId = null,
