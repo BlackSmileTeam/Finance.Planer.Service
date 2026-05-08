@@ -112,9 +112,12 @@ app.UseSwaggerUI(c =>
     c.InjectStylesheet("/swagger-ui/dark-theme.css");
 });
 
-app.UseMiddleware<ExceptionHandlingMiddleware>();
-app.UseHttpsRedirection();
 app.UseCors("frontend");
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+if (builder.Configuration.GetValue("HttpsRedirection:Enabled", false))
+{
+    app.UseHttpsRedirection();
+}
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
